@@ -50,6 +50,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
   const { slug } = params;
   const color = searchParams?.color;
   const size = searchParams?.size;
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? 'https://example.com';
 
   const product = await prisma.product.findUnique({
     where: { slug },
@@ -70,6 +71,11 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
 
   const preselectedColor = color && product.colors.includes(color) ? color : product.colors[0];
   const preselectedSize = size && product.sizes.includes(size) ? size : product.sizes[0];
+  const reviewCount = product.testimonials.length;
+  const averageRating =
+    reviewCount > 0
+      ? product.testimonials.reduce((sum, testimonial) => sum + testimonial.rating, 0) / reviewCount
+      : 0;
 
   const productJsonLd = {
     '@context': 'https://schema.org',
@@ -82,7 +88,41 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
       priceCurrency: product.currency,
       price: (product.priceCents / 100).toFixed(2),
       availability: product.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock'
-    }
+    },
+    brand: {
+      '@type': 'Brand',
+      name: 'Blueprint Athletics'
+    },
+    ...(reviewCount > 0
+      ? {
+          aggregateRating: {
+            '@type': 'AggregateRating',
+            ratingValue: averageRating.toFixed(1),
+            reviewCount,
+            bestRating: '5',
+            worstRating: '1'
+          }
+        }
+      : {})
+  };
+
+  const breadcrumbJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      {
+        '@type': 'ListItem',
+        position: 1,
+        name: 'Shop',
+        item: `${baseUrl}/shop`
+      },
+      {
+        '@type': 'ListItem',
+        position: 2,
+        name: product.name,
+        item: `${baseUrl}/product/${product.slug}`
+      }
+    ]
   };
 
   return (
@@ -109,7 +149,11 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
           </div>
         </div>
       </div>
-      <Testimonials testimonials={product.testimonials} averageRating={4.9} reviewCount={120} />
+      <Testimonials
+        testimonials={product.testimonials}
+        averageRating={averageRating > 0 ? averageRating : undefined}
+        reviewCount={reviewCount || undefined}
+      />
       <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-soft">
         <h2 className="font-display text-2xl font-bold text-slate-900">Why athletes love it</h2>
         <ul className="mt-4 grid gap-3 text-sm text-slate-600 md:grid-cols-3">
@@ -136,7 +180,9 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
         }))}
       />
       <RecentlyViewed currentSlug={product.slug} />
-      <script type="application/ld+json" suppressHydrationWarning>{JSON.stringify(productJsonLd)}</script>
+      <script type="application/ld+json" suppressHydrationWarning>
+        {JSON.stringify([productJsonLd, breadcrumbJsonLd])}
+      </script>
     </div>
   );
 }
